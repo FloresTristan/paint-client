@@ -15,6 +15,8 @@ export type HouseData = {
   };
 }
 
+export type FilterType = "all" | "with-defects" | "without-defects";
+
 export type ImageData = {
   src: string;
   label?: string;
@@ -26,4 +28,19 @@ export type ImageLightboxProps = {
   initialIndex?: number;
   isOpen: boolean;
   onClose: () => void;
+  houseId: number;
+  address: string;
+};
+
+export type DefectCategory = {
+  id: string;
+  label: string;
+  color: string;
+};
+
+export type HouseDrawerProps = {
+  isOpen: boolean;
+  onClose: () => void;
+  houseId: number;
+  address: string;
 };

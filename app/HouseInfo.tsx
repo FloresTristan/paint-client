@@ -1,11 +1,14 @@
 import { HouseData } from "./types";
 
-export default function HouseInfo({ house }: { house: HouseData }) {
+export default function HouseInfo({ house }: { house: HouseData;  }) {
+
   return (
     <div className="p-4">
-      <h2 className="font-semibold text-gray-800 mb-2 truncate" title={house.address}>
-        {house.address}
-      </h2>
+      <div className="flex items-start justify-between mb-2">
+        <h2 className="font-semibold text-gray-800 truncate flex-1 pr-2" title={house.address}>
+          {house.address}
+        </h2>
+      </div>
 
       <div className="text-sm text-gray-600 mb-1">
         <strong>Lat:</strong> {house.lat.toFixed(6)}

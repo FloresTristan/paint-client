@@ -46,12 +46,14 @@ export default function HouseCard({ house }: { house: HouseData }) {
 
   if (allImages.length === 0) {
     return (
-      <div className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-all hover:scale-105 duration-150">
-        <div className="w-full h-48 bg-gray-200 flex items-center justify-center text-gray-500">
-          No Images Available
+      <>
+        <div className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-all hover:scale-105 duration-150">
+          <div className="w-full h-48 bg-gray-200 flex items-center justify-center text-gray-500">
+            No Images Available
+          </div>
+          <HouseInfo house={house} />
         </div>
-        <HouseInfo house={house} />
-      </div>
+      </>
     );
   }
 
@@ -131,6 +133,10 @@ export default function HouseCard({ house }: { house: HouseData }) {
         initialIndex={currentImageIndex}
         isOpen={lightboxOpen}
         onClose={() => setLightboxOpen(false)}
+        houseId={house.id}
+        address={house.address}
+        lat={house.lat}
+        lon={house.lon}
       />
     </>
   );
