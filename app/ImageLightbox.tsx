@@ -1,22 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import HouseDrawer from './HouseDrawer';
-
-type ImageData = {
-  src: string;
-  label?: string;
-  angle?: string;
-};
-
-type ImageLightboxProps = {
-  images: ImageData[];
-  initialIndex?: number;
-  isOpen: boolean;
-  onClose: () => void;
-  houseId: number;
-  address: string;
-  lat: number;
-  lon: number;
-};
+import { ImageLightboxProps } from './types';
 
 export default function ImageLightbox({ 
   images, 
@@ -24,9 +8,11 @@ export default function ImageLightbox({
   isOpen, 
   onClose,
   houseId,
+  postcode,
   address,
   lat,
-  lon
+  lon,
+  houseData
 }: ImageLightboxProps) {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [imageError, setImageError] = useState(false);
@@ -79,10 +65,14 @@ export default function ImageLightbox({
 
   const currentImage = images[currentIndex];
 
+  // useEffect(() => {
+    console.log({lat}, {lon})
+  // }, []);
+
   return (
     <div
         className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-90"
-        onClick={onClose}
+        // onClick={onClose}
         >
         {/* Close button */}
         <button
@@ -151,7 +141,7 @@ export default function ImageLightbox({
             {/* Image */}
             {!imageError ? (
             <img
-                src={currentImage.src}
+                src={`http://localhost:8080/${currentImage.src}`}
                 alt={`${currentImage.label || `Image ${currentIndex + 1}`}`}
                 className="w-full h-full object-contain max-h-[85vh]"
                 onError={() => setImageError(true)}
@@ -190,12 +180,15 @@ export default function ImageLightbox({
             }`}
         >
             <HouseDrawer
-            isOpen={drawerOpen}
-            onClose={() => setDrawerOpen(false)}
-            houseId={houseId}
-            address={address}
-            lat={lat}
-            lon={lon}
+              isOpen={drawerOpen}
+              onClose={() => setDrawerOpen(false)}
+              houseId={houseId}
+              postcode={postcode}
+              images={currentImage}
+              address={address}
+              lat={lat}
+              lon={lon}
+              houseData={houseData}
             />
         </div>
     </div>

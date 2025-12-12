@@ -11,15 +11,15 @@ export default function HouseInfo({ house }: { house: HouseData;  }) {
       </div>
 
       <div className="text-sm text-gray-600 mb-1">
-        <strong>Lat:</strong> {house.lat.toFixed(6)}
+        <strong>Lat:</strong> {house.lat}
       </div>
       <div className="text-sm text-gray-600 mb-3">
-        <strong>Lon:</strong> {house.lon.toFixed(6)}
+        <strong>Lon:</strong> {house.lon}
       </div>
 
-      {house.defects && house.defects.length > 0 ? (
+      {house.yolo_results && house.yolo_results.length > 0 ? (
         <ul className="space-y-1">
-          {house.defects.slice(0, 3).map((def, i) => (
+          {house.yolo_results.slice(0, 3).map((def, i) => (
             <li
               key={i}
               className="text-sm text-gray-600 flex justify-between"
@@ -30,9 +30,9 @@ export default function HouseInfo({ house }: { house: HouseData;  }) {
               </span>
             </li>
           ))}
-          {house.defects.length > 3 && (
+          {house.yolo_results.length > 3 && (
             <li className="text-xs text-gray-400 italic">
-              +{house.defects.length - 3} more
+              +{house.yolo_results.length - 3} more
             </li>
           )}
         </ul>

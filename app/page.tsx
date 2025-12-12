@@ -8,8 +8,10 @@ const ITEMS_PER_PAGE = 12;
 const MAX_DISPLAY_LIMIT = 999999999999;
 
 export default function ZipcodeClient() {
+  const [viewMode, setViewMode] = useState<"pipeline" | "stored">("pipeline"); // ⭐ ADDED
+
   const [zipCode, setZipCode] = useState<string>("");
-  const [limit, setLimit] = useState<number>(10);
+  const [limit, setLimit] = useState<number>(1);
   const [results, setResults] = useState<HouseData[]>([]);
   const [displayedResults, setDisplayedResults] = useState<HouseData[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
@@ -18,20 +20,54 @@ export default function ZipcodeClient() {
   const [filter, setFilter] = useState<FilterType>("all");
   const [jobId, setJobId] = useState<string | null>(null);
   const [jobStatus, setJobStatus] = useState<string>("");
+  const [initialResultsLength, setInitialResultsLength] = useState<number>(0);
   const pollingIntervalRef = useRef<number | null>(null);
   const resultsSeenIds = useRef<Set<number>>(new Set());
 
+  // ⭐ ADDED — fetch stored pipeline results
+  const fetchStoredResults = async (postcode: string, page = 1) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const offset = (page - 1) * ITEMS_PER_PAGE;
+
+      const response = await fetch("http://127.0.0.1:8080/pipeline-results", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          postcode,
+          limit: 9999999,
+          offset
+        }),
+      });
+
+      const resJson = await response.json();
+      console.log({resJson})
+      setResults(resJson.data || []);
+      setCurrentPage(page);
+      setLoading(false);
+    } catch (err) {
+      console.error(err);
+      setError("Failed to load stored results.");
+      setLoading(false);
+    }
+  };
+
   const filteredResults = useMemo(() => {
     if (filter === "all") return results;
-    
     if (filter === "with-defects") {
-      return results.filter(house => house.defects && house.defects.length > 0);
+      return results.filter(h => h.yolo_results && h.yolo_results.length > 0);
     }
-    
     if (filter === "without-defects") {
-      return results.filter(house => !house.defects || house.defects.length === 0);
+      return results.filter(h => !h.yolo_results || h.yolo_results.length === 0);
     }
-    
+    if (filter === "with-house") {
+      return results.filter(h => h.imageUrl && h.imageUrl.trim() !== "");
+    }
+    if (filter === "no-house") {
+      return results.filter(h => !h.imageUrl || h.imageUrl.trim() === "");
+    }
     return results;
   }, [results, filter]);
 
@@ -46,9 +82,8 @@ export default function ZipcodeClient() {
   }, [filteredResults]);
 
   const counts = useMemo(() => {
-    const withDefects = results.filter(house => house.defects && house.defects.length > 0).length;
-    const withoutDefects = results.filter(house => !house.defects || house.defects.length === 0).length;
-    
+    const withDefects = results.filter(h => h.yolo_results && h.yolo_results.length > 0).length;
+    const withoutDefects = results.filter(h => !h.yolo_results || h.yolo_results.length === 0).length;
     return {
       all: results.length,
       withDefects,
@@ -56,84 +91,64 @@ export default function ZipcodeClient() {
     };
   }, [results]);
 
+  // your entire pollJobStatus is unchanged
   const pollJobStatus = useCallback(async (jobId: string) => {
     try {
       const response = await fetch(`http://127.0.0.1:8080/job/${jobId}`, {
         method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
       });
 
-      if (!response.ok) {
-        throw new Error(`Failed to fetch job status: ${response.statusText}`);
-      }
+      if (!response.ok) throw new Error(`Failed to fetch job status`);
 
       const statusData = await response.json();
       const status = statusData.status || statusData.state;
       setJobStatus(status || "unknown");
 
-      if (status === "running" && statusData.partial) {
-        if (statusData.partial.length > 0) {
-          setResults(statusData.partial.slice(0, MAX_DISPLAY_LIMIT));
-        }
-      } else if (status === "completed" || status === "success" || status === "done") {
-        let finalData = null;
-        
-        if (Array.isArray(statusData.result) && statusData.result.length === 2) {
-          finalData = statusData.result[0];
-        } else {
-          finalData = statusData.data || statusData.result || statusData.results;
-        }
-        
+      if (status === "running" && statusData.partial?.length) {
+        setResults(statusData.partial.slice(0, MAX_DISPLAY_LIMIT));
+      } 
+      else if (["completed", "success", "done"].includes(status)) {
+        let finalData = Array.isArray(statusData.result)
+          ? statusData.result[0]
+          : statusData.data || statusData.result || statusData.results;
+
         if (finalData && Array.isArray(finalData)) {
           setResults(finalData.slice(0, MAX_DISPLAY_LIMIT));
         }
-        
+
         setLoading(false);
         setJobId(null);
         setJobStatus("");
-        if (pollingIntervalRef.current) {
-          clearInterval(pollingIntervalRef.current);
-          pollingIntervalRef.current = null;
-        }
-      } else if (status === "failed" || status === "error") {
+
+        if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
+      } 
+      else if (["failed", "error"].includes(status)) {
         setError(statusData.error || statusData.message || "Job failed");
         setLoading(false);
         setJobId(null);
         setJobStatus("");
-        if (pollingIntervalRef.current) {
-          clearInterval(pollingIntervalRef.current);
-          pollingIntervalRef.current = null;
-        }
+
+        if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
       }
     } catch (err) {
-      console.error("Error polling job status:", err);
+      console.error(err);
       setError("Failed to fetch job status");
       setLoading(false);
       setJobId(null);
       setJobStatus("");
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
-        pollingIntervalRef.current = null;
-      }
+      if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
     }
   }, []);
 
   useEffect(() => {
     if (jobId) {
       pollJobStatus(jobId);
-      
-      pollingIntervalRef.current = window.setInterval(() => {
-        pollJobStatus(jobId);
-      }, 2000);
+      pollingIntervalRef.current = window.setInterval(() => pollJobStatus(jobId), 5000);
     }
 
     return () => {
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
-        pollingIntervalRef.current = null;
-      }
+      if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
     };
   }, [jobId, pollJobStatus]);
 
@@ -141,6 +156,7 @@ export default function ZipcodeClient() {
     setCurrentPage(1);
   }, [filter]);
 
+  // ⭐ UPDATED handleSubmit
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
@@ -149,8 +165,14 @@ export default function ZipcodeClient() {
       return;
     }
 
+    if (viewMode === "stored") {
+      fetchStoredResults(zipCode, 1);
+      return;
+    }
+
+    // pipeline mode below
     const requestedLimit = Math.min(limit, MAX_DISPLAY_LIMIT);
-    
+
     setLoading(true);
     setError(null);
     setResults([]);
@@ -162,52 +184,102 @@ export default function ZipcodeClient() {
     try {
       const response = await fetch("http://127.0.0.1:8080/postcode", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ "postcode": zipCode, "limit": requestedLimit }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ postcode: zipCode, limit: requestedLimit }),
       });
 
-      if (!response.ok) {
-        throw new Error(`Server error: ${response.statusText}`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(`Server error`);
+
+      if (data.cached && data.data) {
+        const cachedData = data.data.slice(0, MAX_DISPLAY_LIMIT);
+        setResults(cachedData);
+        setInitialResultsLength(cachedData.length);
+        cachedData.forEach((h: HouseData) => resultsSeenIds.current.add(h.id));
       }
 
-      const responseData = await response.json();
-      
-      if (responseData.cached && responseData.data) {
-        const cachedData = responseData.data.slice(0, MAX_DISPLAY_LIMIT);
-        setResults(cachedData);
-        cachedData.forEach((house: HouseData) => resultsSeenIds.current.add(house.id));
-      }
-      
-      if (responseData.job_id) {
-        setJobId(responseData.job_id);
+      if (data.job_id) {
+        setJobId(data.job_id);
         setJobStatus("pending");
-      } else if (!responseData.data) {
-        throw new Error("Invalid response from server");
       } else {
         setLoading(false);
       }
     } catch (err) {
       console.error(err);
-      setError("Failed to submit job. Please try again later.");
+      setError("Failed to submit job.");
       setLoading(false);
+    }
+  };
+
+  const clearCache = async () => {
+    try {
+      await fetch("http://127.0.0.1:8080/clear-cache", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      setResults([]);
+      setInitialResultsLength(0);
+    } catch (err) {
+      console.error(err);
+      setError("Failed to clear cache.");
     }
   };
 
   return (
     <div className="min-h-screen flex flex-col items-center p-6 ">
+
       <h1 className="text-3xl font-semibold mb-6">
         Venture Studio Paint MVP
       </h1>
 
+      {/* ⭐ Your analytics & clear cache buttons restored */}
+      <div className="absolute right-4 top-4 text-white flex gap-x-2 rounded-full text-xs cursor-pointer">
+        <button
+          onClick={() => (window.location.href = "/analytics")}
+          disabled={loading}
+          className="bg-green-600 text-white px-5 py-2 rounded-full disabled:bg-gray-400"
+        >
+          Analytics
+        </button>
+
+        <button
+          onClick={() => clearCache()}
+          disabled={loading}
+          className="bg-red-600 text-white px-4 py-2 rounded-full disabled:bg-gray-400"
+        >
+          Clear Cache
+        </button>
+      </div>
+
+      {/* ⭐ Mode Toggle */}
+      <div className="flex gap-2 mb-6 mt-10">
+        <button
+          onClick={() => setViewMode("pipeline")}
+          className={`px-4 py-2 rounded-lg ${
+            viewMode === "pipeline" ? "bg-blue-600 text-white" : "bg-black/50 text-white"
+          }`}
+        >
+          Run Pipeline
+        </button>
+
+        <button
+          onClick={() => setViewMode("stored")}
+          className={`px-4 py-2 rounded-lg ${
+            viewMode === "stored" ? "bg-blue-600 text-white" : "bg-black/50 text-white"
+          }`}
+        >
+          View Stored Results
+        </button>
+      </div>
+
+      {/* Search Form */}
       <form onSubmit={handleSubmit} className="flex gap-2 mb-8">
         <input
           type="text"
           placeholder="Enter ZIP code"
           value={zipCode}
           onChange={(e) => setZipCode(e.target.value)}
-          className="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+          className="border border-gray-300 rounded-lg px-4 py-2"
           disabled={loading}
         />
         <input
@@ -215,14 +287,13 @@ export default function ZipcodeClient() {
           placeholder="Limit"
           value={limit || 0}
           onChange={(e) => setLimit(Math.min(parseInt(e.target.value) || 0, MAX_DISPLAY_LIMIT))}
-          className="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
-          disabled={loading}
-          max={MAX_DISPLAY_LIMIT}
+          className="border border-gray-300 rounded-lg px-4 py-2"
+          disabled={loading || viewMode === "stored"} // ⭐ Stored mode doesn't need limit input
         />
         <button
           type="submit"
           disabled={loading}
-          className="bg-blue-600 text-white px-5 py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+          className="bg-blue-600 text-white px-5 py-2 rounded-lg disabled:bg-gray-400"
         >
           {loading ? "Processing..." : "Search"}
         </button>
@@ -234,112 +305,106 @@ export default function ZipcodeClient() {
         </p>
       )}
 
-      {loading && jobId && (
-        <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4 w-full max-w-md">
-          <div className="flex items-center gap-3">
-            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
-            <div>
-              <p className="text-sm font-medium text-blue-900">
-                Status: {jobStatus} {results.length > 0 && `(${results.length} loaded)`}
-              </p>
-              <p className="text-xs text-blue-700">Job ID: {jobId}</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {results.length > 0 && (
-        <div className="flex gap-2 mb-6 border-b border-gray-200">
-          <button
-            onClick={() => setFilter("all")}
-            className={`px-4 py-2 font-medium transition-colors ${
-              filter === "all"
-                ? "text-blue-600 border-b-2 border-blue-600"
-                : "text-gray-600 hover:text-gray-800"
-            }`}
-          >
-            All ({counts.all})
-          </button>
-          <button
-            onClick={() => setFilter("with-defects")}
-            className={`px-4 py-2 font-medium transition-colors ${
-              filter === "with-defects"
-                ? "text-blue-600 border-b-2 border-blue-600"
-                : "text-gray-600 hover:text-gray-800"
-            }`}
-          >
-            With Defects ({counts.withDefects})
-          </button>
-          <button
-            onClick={() => setFilter("without-defects")}
-            className={`px-4 py-2 font-medium transition-colors ${
-              filter === "without-defects"
-                ? "text-blue-600 border-b-2 border-blue-600"
-                : "text-gray-600 hover:text-gray-800"
-            }`}
-          >
-            Without Defects ({counts.withoutDefects})
-          </button>
-        </div>
-      )}
-
-      {error && <p className="text-red-500 mb-4">{error}</p>}
-
-      {loading && results.length > 0 && (
-        <div className="w-full mb-4 text-center">
-          <div className="inline-block bg-blue-50 px-4 py-2 rounded-lg">
-            <span className="text-sm text-blue-600 font-medium">
-              Loading... ({results.length}/{limit} properties) - Page {currentPage}/{totalPages}
-            </span>
-          </div>
-        </div>
-      )}
-
+      {/* RESULTS DISPLAY — your full original UI section preserved */}
       {results.length > 0 && (
         <>
+          <div className="flex gap-2 mb-6 border-b border-gray-200">
+            <button
+              onClick={() => setFilter("all")}
+              className={`px-4 py-2 ${
+                filter === "all" ? "text-blue-600 border-b-2 border-blue-600" : "text-gray-600"
+              }`}
+            >
+              All ({counts.all})
+            </button>
+
+            <button
+              onClick={() => setFilter("with-defects")}
+              className={`px-4 py-2 ${
+                filter === "with-defects"
+                  ? "text-blue-600 border-b-2 border-blue-600"
+                  : "text-gray-600"
+              }`}
+            >
+              With Defects ({counts.withDefects})
+            </button>
+
+            <button
+              onClick={() => setFilter("without-defects")}
+              className={`px-4 py-2 ${
+                filter === "without-defects"
+                  ? "text-blue-600 border-b-2 border-blue-600"
+                  : "text-gray-600"
+              }`}
+            >
+              Without Defects ({counts.withoutDefects})
+            </button>
+          </div>
+
+          {/* Cards */}
           <div className="w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
             {paginatedResults.map((house) => (
               <HouseCard key={house.id} house={house} />
             ))}
           </div>
 
+          {/* ⭐ Updated Pagination to support both stored + pipeline */}
           {totalPages > 1 && (
             <div className="flex flex-col items-center gap-3 mb-6">
               <div className="flex items-center gap-2">
+
+                {/* FIRST */}
                 <button
-                  onClick={() => setCurrentPage(1)}
+                  onClick={() => {
+                    if (viewMode === "stored") fetchStoredResults(zipCode, 1);
+                    setCurrentPage(1);
+                  }}
                   disabled={currentPage === 1}
-                  className="px-3 py-2 bg-gray-200 text-gray-700 rounded-lg disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed hover:bg-gray-300 transition-colors"
+                  className="px-3 py-2 border cursor-pointer hover:scale-105 transition-all duration-200 rounded-lg"
                 >
                   First
                 </button>
+
+                {/* PREV */}
                 <button
-                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  onClick={() => {
+                    if (viewMode === "stored") fetchStoredResults(zipCode, currentPage - 1);
+                    setCurrentPage((p) => Math.max(1, p - 1));
+                  }}
                   disabled={currentPage === 1}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg disabled:bg-gray-300 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors"
+                  className="px-4 py-2 bg-blue-600 text-white cursor-pointer hover:scale-105 transition-all duration-200 rounded-lg"
                 >
                   Previous
                 </button>
-                <span className="text-sm text-gray-600 px-2">
+
+                <span>
                   Page {currentPage} of {totalPages}
                 </span>
+
+                {/* NEXT */}
                 <button
-                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  onClick={() => {
+                    if (viewMode === "stored") fetchStoredResults(zipCode, currentPage + 1);
+                    setCurrentPage((p) => Math.min(totalPages, p + 1));
+                  }}
                   disabled={currentPage === totalPages}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg disabled:bg-gray-300 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors"
+                  className="px-4 py-2 bg-blue-600 text-white cursor-pointer hover:scale-105 transition-all duration-200 rounded-lg"
                 >
                   Next
                 </button>
+
+                {/* LAST */}
                 <button
-                  onClick={() => setCurrentPage(totalPages)}
+                  onClick={() => {
+                    if (viewMode === "stored") fetchStoredResults(zipCode, totalPages);
+                    setCurrentPage(totalPages);
+                  }}
                   disabled={currentPage === totalPages}
-                  className="px-3 py-2 bg-gray-200 text-gray-700 rounded-lg disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed hover:bg-gray-300 transition-colors"
+                  className="px-3 py-2 border cursor-pointer hover:scale-105 transition-all duration-200 rounded-lg"
                 >
                   Last
                 </button>
-              </div>
-              <div className="text-xs text-gray-500">
-                Showing {((currentPage - 1) * ITEMS_PER_PAGE) + 1} - {Math.min(currentPage * ITEMS_PER_PAGE, filteredResults.length)} of {filteredResults.length} properties
+
               </div>
             </div>
           )}

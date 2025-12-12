@@ -5,12 +5,18 @@ export type HouseData = {
   lon: number;
   postcode: string;
   imageUrl?: string;
-  defects?: { type: string; confidence: number }[];
+  yolo_results?: { type: string; confidence: number }[];
   results?: {
     [key: string]: {
       confidence: number | null;
       image: string;
       label: string;
+      moondream_results?: {
+        confidence: number;
+        label: string;
+        raw: string;
+      };
+      yolo_results?: { type: string; confidence: number }[];
     };
   };
 }
@@ -20,7 +26,7 @@ export type FilterType = "all" | "with-defects" | "without-defects";
 export type ImageData = {
   src: string;
   label?: string;
-  angle?: string;
+  angle?: string | number; // Changed to support both string and number
 };
 
 export type ImageLightboxProps = {
@@ -29,7 +35,11 @@ export type ImageLightboxProps = {
   isOpen: boolean;
   onClose: () => void;
   houseId: number;
+  postcode: string;
   address: string;
+  lat: number;
+  lon: number;
+  houseData: HouseData;
 };
 
 export type DefectCategory = {
@@ -42,5 +52,10 @@ export type HouseDrawerProps = {
   isOpen: boolean;
   onClose: () => void;
   houseId: number;
+  postcode: string;
+  images: ImageData;
   address: string;
+  lat: number;
+  lon: number;
+  houseData: HouseData;
 };

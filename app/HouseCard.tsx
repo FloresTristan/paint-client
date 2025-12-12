@@ -1,4 +1,4 @@
-import React, {useState} from "react";
+import React, {useState, useEffect} from "react";
 import ImageLightbox from "./ImageLightbox";
 import { HouseData } from "./types";
 import HouseInfo from "./HouseInfo";
@@ -21,7 +21,7 @@ export default function HouseCard({ house }: { house: HouseData }) {
           images.push({ 
             src: result.image, 
             label: result.label,
-            angle: `${angle}°` 
+            angle: `${angle}` 
           });
         }
       });
@@ -44,6 +44,10 @@ export default function HouseCard({ house }: { house: HouseData }) {
     setImageError(false);
   };
 
+  // useEffect(() => {
+    console.log({house})
+  // }, []);
+
   if (allImages.length === 0) {
     return (
       <>
@@ -59,6 +63,8 @@ export default function HouseCard({ house }: { house: HouseData }) {
 
   const currentImage = allImages[currentImageIndex];
 
+  console.log({currentImage})
+
   return (
     <>
       <div className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-all hover:scale-105 duration-150">
@@ -68,7 +74,7 @@ export default function HouseCard({ house }: { house: HouseData }) {
         >
           {!imageError ? (
             <img
-              src={currentImage.src}
+              src={`http://localhost:8080/${currentImage.src}`}
               alt={`${house.address} - ${currentImage.label || `Image ${currentImageIndex + 1}`}`}
               className="w-full h-full object-cover"
               loading="lazy"
@@ -134,9 +140,11 @@ export default function HouseCard({ house }: { house: HouseData }) {
         isOpen={lightboxOpen}
         onClose={() => setLightboxOpen(false)}
         houseId={house.id}
+        postcode={house.postcode}
         address={house.address}
         lat={house.lat}
         lon={house.lon}
+        houseData={house}
       />
     </>
   );
