@@ -1,97 +1,94 @@
-export interface Condition {
-  moondream_label: string;
+// Model-Agnostic Analytics Types
+
+export interface ConditionBreakdownItem {
+  condition: "needs-repaint" | "ok" | "unknown";
+  count: number;
+  avg_confidence: number | null;
+  percentage: number;
+}
+
+export interface ConditionDistribution {
+  breakdown: ConditionBreakdownItem[];
   total: number;
 }
 
-export interface Defect {
-  defect_type: string;
-  occurrences: number;
-  avg_confidence: number;
+export interface ModelConditionStats {
+  count: number;
+  avg_confidence: number | null;
 }
 
-export interface YoloFalsePositiveSummary {
-  false_positives: number;
-  true_positives: number;
-  false_negatives: number;
-  true_negatives: number;
-  accuracy_percent: number;
-  precision_percent: number;
-  recall_percent: number;
-  total_samples: number;
+export interface ModelBreakdown {
+  model: string;  // "moondream" | "gpt4v" | "claude" | etc.
+  total: number;
+  conditions: Record<string, ModelConditionStats>;
 }
 
-export interface MoondreamFalsePositiveSummary {
-  false_positives: number;
-  true_positives: number;
-  false_negatives: number;
-  true_negatives: number;
-  error_cases: number;
-  total_samples: number;
-  accuracy_percent: number;
-  precision_percent: number;
-  recall_percent: number;
+export interface GeographicSummary {
+  postcode: string;
+  city: string | null;
+  total_properties: number;
+  needs_work: number;
+  needs_work_percent: number;
 }
 
-export interface MoondreamHumanAgreement {
-  breakdown: Array<{
-    moondream_label: string;
-    human_moondream_label: string;
-    total: number;
-  }>;
-  total_comparisons: number;
-  matches: number;
-  agreement_percent: number;
+export interface ConfidenceBucket {
+  bucket: "high (0.9-1.0)" | "medium (0.7-0.9)" | "low (0.5-0.7)" | "very low (<0.5)";
+  count: number;
+  percentage: number;
 }
 
-export interface HouseDetectionSummary {
-  model_detected: number;
-  human_detected: number;
+export interface ConfidenceStats {
+  distribution: ConfidenceBucket[];
+  total: number;
+}
+
+export interface TrendDataPoint {
+  date: string;  // YYYY-MM-DD
+  conditions: Record<string, number>;
+  total: number;
+}
+
+export interface HumanValidationComparison {
+  human_label: string;
+  model_label: string;
+  count: number;
+  agrees: boolean;
+}
+
+export interface HumanValidationStats {
+  comparisons: HumanValidationComparison[];
+  total: number;
   agreement: number;
   agreement_percent: number;
 }
 
-export interface YoloVsMoondream {
-  moondream_label: string;
-  yolo_defect: string;
-  total: number;
+export interface AnalyticsSummary {
+  total_properties: number;
+  condition_distribution: ConditionDistribution;
+  model_breakdown: ModelBreakdown[];
+  geographic_summary: GeographicSummary[];
+  confidence_stats: ConfidenceStats;
+  recent_trends: TrendDataPoint[];
+  human_validation: HumanValidationStats;
 }
 
-export interface ModelCorrelation {
-  total_samples: number;
-  correlation: number | null;
-  interpretation: string;
-}
-
-export interface AnalyticsData {
-  conditions: Condition[];
-  defects: Defect[];
-  human_vs_model_defects: any[];
-  yolo_false_positive_summary: YoloFalsePositiveSummary;
-  moondream_false_positive_summary: MoondreamFalsePositiveSummary;
-  moondream_human_agreement: MoondreamHumanAgreement;
-  house_detection_summary: HouseDetectionSummary;
-  yolo_vs_moondream: YoloVsMoondream[];
-  model_correlation: ModelCorrelation;
-}
-
-export interface ConditionChartData {
+// Chart-ready data types
+export interface ChartDataPoint {
   name: string;
   value: number;
-  percentage: string;
   [key: string]: string | number;
 }
 
-export interface DefectChartData {
-  name: string;
-  occurrences: number;
-  confidence: string;
-  [key: string]: string | number;
-}
-
-export interface ComparisonData {
-  name: string;
+export interface ModelComparisonChartData {
+  model: string;
   ok: number;
-  'needs-repaint': number;
-  error: number;
-  [key: string]: string | number;
+  "needs-repaint": number;
+  unknown: number;
+}
+
+export interface TrendChartData {
+  date: string;
+  ok: number;
+  "needs-repaint": number;
+  total: number;
 }

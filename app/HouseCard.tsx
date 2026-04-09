@@ -11,9 +11,9 @@ export default function HouseCard({ house }: { house: HouseData }) {
   const allImages = React.useMemo(() => {
     const images: { src: string; label?: string; angle?: string }[] = [];
 
-    if (house.imageUrl) {
-      images.push({ src: house.imageUrl, label: "Main Image" });
-    }
+    // if (house.imageUrl) {
+    //   images.push({ src: house.imageUrl, label: "Main Image" });
+    // }
 
     if (house.results) {
       Object.entries(house.results).forEach(([angle, result]) => {
@@ -60,10 +60,15 @@ export default function HouseCard({ house }: { house: HouseData }) {
       </>
     );
   }
-
+  console.log({allImages})
   const currentImage = allImages[currentImageIndex];
 
   console.log({currentImage})
+
+  const getImageSrc = (src: string) =>
+    src.startsWith("http://") || src.startsWith("https://")
+      ? src
+      : `http://localhost:8080/${src}`;
 
   return (
     <>
@@ -74,7 +79,7 @@ export default function HouseCard({ house }: { house: HouseData }) {
         >
           {!imageError ? (
             <img
-              src={`http://localhost:8080/${currentImage.src}`}
+              src={getImageSrc(currentImage.src)}
               alt={`${house.address} - ${currentImage.label || `Image ${currentImageIndex + 1}`}`}
               className="w-full h-full object-cover"
               loading="lazy"

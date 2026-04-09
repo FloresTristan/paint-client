@@ -34,6 +34,8 @@ export default function HouseDrawer({ isOpen, onClose, houseId, postcode, images
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE
+
   // Get AI results for current angle
   const getCurrentAngleAI = () => {
     if (!houseData?.results) return null;
@@ -46,6 +48,9 @@ export default function HouseDrawer({ isOpen, onClose, houseId, postcode, images
     console.log('Looking for angle:', angleKey, 'Found result:', result);
     return result;
   };
+
+  console.log('House data results:', houseData?.results);
+  console.log('House ID:', houseId)
 
   const currentAngleAI = getCurrentAngleAI();
 
@@ -182,7 +187,7 @@ export default function HouseDrawer({ isOpen, onClose, houseId, postcode, images
     setMetadataError(null);
     
     try {
-      const response = await fetch('http://127.0.0.1:8080/streetview-metadata', {
+      const response = await fetch(`${API_BASE_URL}/streetview-metadata`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -246,6 +251,7 @@ export default function HouseDrawer({ isOpen, onClose, houseId, postcode, images
     };
 
     const payload = {
+      pipeline_result_id: houseId,
       address: address,
       postcode: postcode,
       img_path: images.src,
@@ -257,7 +263,7 @@ export default function HouseDrawer({ isOpen, onClose, houseId, postcode, images
     };
 
     try {
-      const response = await fetch('http://127.0.0.1:8080/user-tagged-defects', {
+      const response = await fetch(`${API_BASE_URL}/user-tagged-defects`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

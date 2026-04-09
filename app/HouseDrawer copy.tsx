@@ -19,6 +19,8 @@ export default function HouseDrawer({ isOpen, onClose, houseId, postcode, images
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  const API_BASE_URL= process.env.NEXT_PUBLIC_API_BASE
+
   useEffect(() => {
     const hasHouseLabel = images.label?.toLowerCase() === 'house';
     
@@ -41,7 +43,7 @@ export default function HouseDrawer({ isOpen, onClose, houseId, postcode, images
     setMetadataError(null);
     
     try {
-      const response = await fetch('http://127.0.0.1:8080/streetview-metadata', {
+      const response = await fetch(`${API_BASE_URL}/streetview-metadata`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -109,7 +111,7 @@ export default function HouseDrawer({ isOpen, onClose, houseId, postcode, images
     };
 
     try {
-      const response = await fetch('http://127.0.0.1:8080/user-tagged-defects', {
+      const response = await fetch(`${API_BASE_URL}/user-tagged-defects`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

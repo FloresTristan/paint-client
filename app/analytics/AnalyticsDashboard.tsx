@@ -1,869 +1,468 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useMemo, useEffect, useState } from "react";
 import {
   BarChart,
   Bar,
   PieChart,
   Pie,
-  Cell,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   Legend,
+  Cell,
   ResponsiveContainer,
 } from "recharts";
-import { AlertCircle, CheckCircle, Home, TrendingUp, User, Moon } from "lucide-react";
-import type {
-  AnalyticsData,
-  ConditionChartData,
-  DefectChartData,
-  ComparisonData,
-} from "./types";
+import { AnalyticsSummary, ChartDataPoint } from "./types";
 
-const AnalyticsDashboard = () => {
-  const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
-  const [loading, setLoading] = useState(false);
-  
-  // User tagged data state
-  const [userTaggedData, setUserTaggedData] = useState<any[]>([]);
-  const [userTaggedLoading, setUserTaggedLoading] = useState(false);
+const COLORS: Record<string, string> = {
+  "needs-repaint": "#ef4444", // red
+  ok: "#22c55e", // green
+  unknown: "#94a3b8", // gray
+};
 
-  // ⭐ Filter state
-  const [filters, setFilters] = useState({
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE
+
+type Filters = {
+  postcode: string;
+  model: string;
+};
+
+export default function AnalyticsDashboard() {
+  const [data, setData] = useState<AnalyticsSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // draft filters (what user is typing/selecting)
+  const [draftFilters, setDraftFilters] = useState<Filters>({
     postcode: "",
-    model: "all",
+    model: "",
   });
 
-  // ⭐ User tagged filters (postcode comes from main filters)
-  const [userFilters, setUserFilters] = useState({
-    address: "",
-    is_house: "all",
-    has_defects: "all",
-    limit: 999999999,
+  // applied filters (what the API call uses)
+  const [appliedFilters, setAppliedFilters] = useState<Filters>({
+    postcode: "",
+    model: "",
   });
 
-  // ============================================================
-  // ⭐ Fetch analytics function (POST + normalization)
-  // ============================================================
-  const fetchAnalytics = async () => {
+  const isDirty = useMemo(
+    () => JSON.stringify(draftFilters) !== JSON.stringify(appliedFilters),
+    [draftFilters, appliedFilters]
+  );
+
+  console.log("analytics data", data);
+
+  const fetchAnalytics = async (filtersToUse: Filters) => {
+    setLoading(true);
     try {
-      setLoading(true);
-
-      const response = await fetch("http://127.0.0.1:8080/analytics", {
+      const response = await fetch(`${API_BASE_URL}/analytics`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(filters),
+        body: JSON.stringify(filtersToUse),
       });
 
-      const data = await response.json();
-      const summary = data.summary || {};
-
-      // ⭐ Normalize to avoid undefined errors
-      setAnalytics({
-        ...summary,
-        conditions: summary.conditions || [],
-        defects: summary.defects || [],
-        human_vs_model_defects: summary.human_vs_model_defects || [],
-        yolo_vs_moondream: summary.yolo_vs_moondream || [],
-        yolo_false_positive_summary: summary.yolo_false_positive_summary || {},
-        moondream_false_positive_summary: summary.moondream_false_positive_summary || {},
-        moondream_human_agreement: summary.moondream_human_agreement || {},
-        house_detection_summary: summary.house_detection_summary || {},
-        model_correlation: summary.model_correlation || {},
-      });
+      console.log("raw response", response);
+      if (!response.ok) throw new Error("Failed to fetch analytics");
+      const result = await response.json();
+      setData(result.summary);
+      setError(null);
     } catch (err) {
-      console.error("Error fetching analytics:", err);
-      setAnalytics(null);
+      console.error(err);
+      setError("Failed to load analytics");
+      setData(null);
     } finally {
       setLoading(false);
     }
   };
 
-  console.log({analytics})
-
-  // ============================================================
-  // ⭐ Fetch user tagged data (uses postcode from main filters)
-  // ============================================================
-  const fetchUserTagged = async () => {
-    try {
-      setUserTaggedLoading(true);
-
-      const payload: any = {
-        limit: userFilters.limit,
-      };
-
-      // Use postcode from main analytics filters
-      if (filters.postcode) payload.postcode = filters.postcode;
-      if (userFilters.address) payload.address = userFilters.address;
-      if (userFilters.is_house !== "all") {
-        payload.is_house = userFilters.is_house === "true";
-      }
-      if (userFilters.has_defects !== "all") {
-        payload.has_defects = userFilters.has_defects === "true";
-      }
-
-      const response = await fetch("http://127.0.0.1:8080/get-user-tagged", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      const result = await response.json();
-      setUserTaggedData(result.data || []);
-    } catch (err) {
-      console.error("Error fetching user-tagged data:", err);
-      setUserTaggedData([]);
-    } finally {
-      setUserTaggedLoading(false);
-    }
-  };
-
-  // ============================================================
-  // ⭐ Fetch both analytics and user tagged data together
-  // ============================================================
-  const fetchAllData = async () => {
-    await Promise.all([fetchAnalytics(), fetchUserTagged()]);
-  };
-
-  // ⭐ Fetch once on startup only
+  // initial load once
   useEffect(() => {
-    fetchAllData();
+    fetchAnalytics(appliedFilters);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ============================================================
-  // Render States
-  // ============================================================
-  if (loading && !analytics) {
+  const onApply = () => {
+    setAppliedFilters(draftFilters);
+    fetchAnalytics(draftFilters);
+  };
+
+  if (loading && !data) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-xl text-gray-600">Loading analytics…</div>
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-xl">Loading analytics...</div>
       </div>
     );
   }
 
-  if (!analytics) {
+  if (error || !data) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-xl text-red-600">Failed to load analytics</div>
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-xl text-red-600">{error || "No data available"}</div>
       </div>
     );
   }
 
-  // ============================================================
-  // Safe calculations
-  // ============================================================
-  const totalAddresses =
-    analytics.conditions?.reduce((sum, c) => sum + c.total, 0) || 0;
+  // Prepare chart data
+  const conditionPieData: ChartDataPoint[] =
+    data.condition_distribution.breakdown.map((item) => ({
+      name: item.condition,
+      value: item.count,
+      percentage: item.percentage,
+    }));
 
-  const totalDefects =
-    analytics.defects?.reduce((sum, d) => sum + d.occurrences, 0) || 0;
+  const modelComparisonData = data.model_breakdown.map((model) => ({
+    model: model.model,
+    "needs-repaint": model.conditions["needs-repaint"]?.count || 0,
+    ok: model.conditions["ok"]?.count || 0,
+    unknown: model.conditions["unknown"]?.count || 0,
+  }));
 
-  const COLORS: Record<string, string> = {
-    ok: "#10b981",
-    "needs-repaint": "#f59e0b",
-    error: "#ef4444",
-    null: "#6b7280",
-  };
+  const trendData = data.recent_trends.map((trend) => ({
+    date: trend.date,
+    "needs-repaint": trend.conditions["needs-repaint"] || 0,
+    ok: trend.conditions["ok"] || 0,
+    total: trend.total,
+  }));
 
-  // ============================================================
-  // Condition Chart
-  // ============================================================
-  const conditionChartData: ConditionChartData[] =
-    analytics.conditions?.map((c) => {
-      let name = "";
-      let key = c.moondream_label; // may be null
-
-      if (key === "ok") {
-        name = "OK";
-      } else if (key === "needs-repaint") {
-        name = "Needs Repaint";
-      } else if (key === "error") {
-        name = "Error";
-      } else if (key === null) {
-        name = "Null"; // 👈 explicit NULL handling
-        key = "null";      // 👈 so COLORS[key] works
-      }
-
-      return {
-        name,
-        key, // useful if your chart uses `fill={COLORS[item.key]}`
-        value: c.total,
-        percentage: ((c.total / totalAddresses) * 100).toFixed(1),
-      };
-    }) || [];
-
-  // ============================================================
-  // Defect charts
-  // ============================================================
-  const defectChartData: DefectChartData[] =
-    analytics.defects?.map((d) => ({
-      name: d.defect_type,
-      occurrences: d.occurrences,
-      confidence: (d.avg_confidence * 100).toFixed(1),
-    })) || [];
-
-  // ============================================================
-  // YOLO vs Moondream Comparison
-  // ============================================================
-  const yoloMoondreamData: Record<string, ComparisonData> = {};
-
-  (analytics.yolo_vs_moondream || []).forEach((item) => {
-    if (!yoloMoondreamData[item.yolo_defect]) {
-      yoloMoondreamData[item.yolo_defect] = {
-        name: item.yolo_defect,
-        ok: 0,
-        "needs-repaint": 0,
-        error: 0,
-      };
-    }
-    yoloMoondreamData[item.yolo_defect][item.moondream_label] = item.total;
-  });
-
-  const comparisonChartData: ComparisonData[] = Object.values(
-    yoloMoondreamData || {}
-  );
-
-  // ============================================================
-  // User Tagged Stats
-  // ============================================================
-  const userTaggedStats = {
-    total: userTaggedData.length,
-    withDefects: userTaggedData.filter(d => d.defects && d.defects.length > 0).length,
-    houses: userTaggedData.filter(d => d.is_house).length,
-  };
-
-  // ============================================================
-  // UI START
-  // ============================================================
   return (
-    <div className="min-h-screen bg-gray-50 p-8">
+    <div className="min-h-screen bg-gray-50 p-6 text-black/50">
       <div className="max-w-7xl mx-auto">
-        <h1 className="text-4xl font-bold text-gray-900 mb-2">
-          Paint Defect Analytics Dashboard
-        </h1>
-
-        {/* ============================================================ */}
-        {/* ⭐ FILTER BAR (Analytics) */}
-        {/* ============================================================ */}
-        <div className="bg-white rounded-lg shadow p-4 mb-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-3">Filters</h3>
-          <div className="flex gap-4 items-end">
-            {/* Postcode */}
-            <div className="flex flex-col">
-              <label className="text-sm text-gray-600">Postcode</label>
-              <input
-                className="border rounded p-2 text-gray-600"
-                value={filters.postcode}
-                onChange={(e) =>
-                  setFilters({ ...filters, postcode: e.target.value })
-                }
-                placeholder="e.g. 29161"
-              />
-            </div>
-
-            {/* Model */}
-            <div className="flex flex-col">
-              <label className="text-sm text-gray-600">Model</label>
-              <select
-                className="border rounded p-2 text-gray-600"
-                value={filters.model}
-                onChange={(e) =>
-                  setFilters({ ...filters, model: e.target.value })
-                }
-              >
-                <option value="all">All Models</option>
-                <option value="yolo">YOLO</option>
-                <option value="moondream">Moondream</option>
-                <option value="house">House Classifier</option>
-              </select>
-            </div>
-
-            {/* APPLY FILTERS BUTTON */}
-            <button
-              onClick={fetchAllData}
-              disabled={loading || userTaggedLoading}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400"
-            >
-              {loading || userTaggedLoading ? "Loading..." : "Apply Filters"}
-            </button>
-          </div>
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-4xl font-bold text-gray-900 mb-2">
+            Paint Assessment Analytics
+          </h1>
+          <p className="text-gray-600">
+            Model-agnostic insights across {data.total_properties} properties
+          </p>
         </div>
 
-        <p className="text-gray-600 mb-8">
-          Comprehensive analysis of AI model performance
-        </p>
+        {/* Filters */}
+        <div className="bg-white rounded-lg shadow p-4 mb-6 flex gap-4">
+          <input
+            type="text"
+            placeholder="Filter by ZIP code"
+            value={draftFilters.postcode}
+            onChange={(e) =>
+              setDraftFilters({ ...draftFilters, postcode: e.target.value })
+            }
+            onKeyDown={(e) => {
+              if (e.key === "Enter") onApply();
+            }}
+            className="border rounded px-3 py-2"
+          />
+          <select
+            value={draftFilters.model}
+            onChange={(e) =>
+              setDraftFilters({ ...draftFilters, model: e.target.value })
+            }
+            className="border rounded px-3 py-2"
+          >
+            <option value="">All Models</option>
+            <option value="moondream">Moondream</option>
+          </select>
 
-        {/* ============================================================ */}
-        {/* Summary Cards */}
-        {/* ============================================================ */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">Total Addresses</p>
-                <p className="text-3xl font-bold text-gray-900">
-                  {totalAddresses}
-                </p>
-              </div>
-              <TrendingUp className="w-10 h-10 text-blue-500" />
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">Total Defects</p>
-                <p className="text-3xl font-bold text-gray-900">
-                  {totalDefects}
-                </p>
-              </div>
-              <AlertCircle className="w-10 h-10 text-orange-500" />
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">Houses Detected</p>
-                <p className="text-3xl font-bold text-gray-900">
-                  {analytics.house_detection_summary?.model_detected || 0}
-                </p>
-              </div>
-              <Home className="w-10 h-10 text-green-500" />
-            </div>
-          </div>
-
-          {/* <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">Model Correlation</p>
-                <p className="text-3xl font-bold text-gray-900">
-                  {analytics.model_correlation?.correlation?.toFixed(3) ||
-                    "N/A"}
-                </p>
-                <p className="text-xs text-gray-500 mt-1">
-                  {analytics.model_correlation?.interpretation}
-                </p>
-              </div>
-              <CheckCircle className="w-10 h-10 text-purple-500" />
-            </div>
-          </div> */}
+          <button
+            onClick={onApply}
+            disabled={!isDirty || loading}
+            className={`px-4 py-2 rounded text-white ${
+              !isDirty || loading
+                ? "bg-blue-300 cursor-not-allowed"
+                : "bg-blue-600 hover:bg-blue-700"
+            }`}
+          >
+            {loading ? "Applying..." : "Apply Filters"}
+          </button>
         </div>
 
-        {/* ============================================================ */}
-        {/* ⭐ USER TAGGED SECTION */}
-        {/* ============================================================ */}
-        <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg shadow p-6 mb-8">
-          <div className="flex items-center gap-2 mb-4">
-            <User className="w-6 h-6 text-indigo-600" />
-            <h2 className="text-2xl font-bold text-gray-900">User Tagged Data</h2>
-          </div>
+        {/* Key Metrics */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          <MetricCard title="Total Properties" value={data.total_properties} color="blue" />
+          <MetricCard
+            title="Needs Work"
+            value={
+              data.condition_distribution.breakdown.find((b) => b.condition === "needs-repaint")
+                ?.count || 0
+            }
+            percentage={
+              data.condition_distribution.breakdown.find((b) => b.condition === "needs-repaint")
+                ?.percentage || 0
+            }
+            color="red"
+          />
+          <MetricCard
+            title="Acceptable"
+            value={data.condition_distribution.breakdown.find((b) => b.condition === "ok")?.count || 0}
+            percentage={
+              data.condition_distribution.breakdown.find((b) => b.condition === "ok")?.percentage || 0
+            }
+            color="green"
+          />
+          <MetricCard
+            title="Model Accuracy"
+            value={`${data.human_validation.agreement_percent}%`}
+            subtitle={`${data.human_validation.total} validations`}
+            color="purple"
+          />
+        </div>
 
-          {/* User Tagged Filters */}
-          <div className="bg-white rounded-lg p-4 mb-4">
-            <h3 className="text-lg font-semibold text-gray-900 mb-3">Additional User Tagged Filters</h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 items-end">
-              <div className="flex flex-col">
-                <label className="text-sm text-gray-600">Address</label>
-                <input
-                  className="border rounded p-2 text-gray-600"
-                  value={userFilters.address}
-                  onChange={(e) =>
-                    setUserFilters({ ...userFilters, address: e.target.value })
-                  }
-                  placeholder="Street name"
-                />
+        {/* Human Validation */}
+        {data.human_validation && (
+          <ChartCard title="Human Validation Analysis" className="mb-6">
+            {/* Top Stats Row */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+              <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-5 border border-purple-200">
+                <div className="text-sm font-medium text-purple-700 mb-1">Overall Agreement</div>
+                <div className="text-4xl font-bold text-purple-900">
+                  {data.human_validation.agreement_percent}%
+                </div>
+                <div className="text-xs text-purple-600 mt-2">
+                  {data.human_validation.agreement.toLocaleString()} of{" "}
+                  {data.human_validation.total.toLocaleString()} matches
+                </div>
               </div>
 
-              <div className="flex flex-col">
-                <label className="text-sm text-gray-600">Is House</label>
-                <select
-                  className="border rounded p-2 text-gray-600"
-                  value={userFilters.is_house}
-                  onChange={(e) =>
-                    setUserFilters({ ...userFilters, is_house: e.target.value })
-                  }
-                >
-                  <option value="all">All</option>
-                  <option value="true">Yes</option>
-                  <option value="false">No</option>
-                </select>
+              {(() => {
+                const rows = data.human_validation.comparisons ?? [];
+                const falsePositive = rows
+                  .filter((r) => r.human_label === "ok" && r.model_label === "needs-repaint")
+                  .reduce((sum, r) => sum + r.count, 0);
+                const falseNegative = rows
+                  .filter((r) => r.human_label === "needs-repaint" && r.model_label === "ok")
+                  .reduce((sum, r) => sum + r.count, 0);
+                const fpRate = ((falsePositive / data.human_validation.total) * 100).toFixed(1);
+                const fnRate = ((falseNegative / data.human_validation.total) * 100).toFixed(1);
+
+                return (
+                  <>
+                    <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl p-5 border border-orange-200">
+                      <div className="text-sm font-medium text-orange-700 mb-1">False Positives</div>
+                      <div className="text-4xl font-bold text-orange-900">{falsePositive}</div>
+                      <div className="text-xs text-orange-600 mt-2">
+                        {fpRate}% of total • Model over-flags
+                      </div>
+                    </div>
+
+                    <div className="bg-gradient-to-br from-rose-50 to-rose-100 rounded-xl p-5 border border-rose-200">
+                      <div className="text-sm font-medium text-rose-700 mb-1">False Negatives</div>
+                      <div className="text-4xl font-bold text-rose-900">{falseNegative}</div>
+                      <div className="text-xs text-rose-600 mt-2">
+                        {fnRate}% of total • Model under-flags
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
+
+              <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-5 border border-blue-200">
+                <div className="text-sm font-medium text-blue-700 mb-1">Total Validations</div>
+                <div className="text-4xl font-bold text-blue-900">
+                  {data.human_validation.total.toLocaleString()}
+                </div>
+                <div className="text-xs text-blue-600 mt-2">
+                  Human-verified labels
+                </div>
               </div>
-
-              <div className="flex flex-col">
-                <label className="text-sm text-gray-600">Has Defects</label>
-                <select
-                  className="border rounded p-2 text-gray-600"
-                  value={userFilters.has_defects}
-                  onChange={(e) =>
-                    setUserFilters({ ...userFilters, has_defects: e.target.value })
-                  }
-                >
-                  <option value="all">All</option>
-                  <option value="true">Yes</option>
-                  <option value="false">No</option>
-                </select>
-              </div>
-
-              {/* <div className="flex flex-col">
-                <label className="text-sm text-gray-600">Limit</label>
-                <input
-                  type="number"
-                  className="border rounded p-2 text-gray-600"
-                  value={userFilters.limit}
-                  onChange={(e) =>
-                    setUserFilters({ ...userFilters, limit: parseInt(e.target.value) || 100 })
-                  }
-                  min="1"
-                />
-              </div> */}
             </div>
 
-            <button
-              onClick={fetchUserTagged}
-              disabled={userTaggedLoading}
-              className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:bg-gray-400"
-            >
-              {userTaggedLoading ? "Refreshing..." : "Refresh User Data"}
-            </button>
-          </div>
+            {/* Confusion Matrix */}
+            <div className="mb-6">
+              <h4 className="text-base font-semibold text-gray-900 mb-3">Confusion Matrix</h4>
+              {(() => {
+                const rows = data.human_validation.comparisons ?? [];
+                const labels = Array.from(new Set(rows.flatMap((r) => [r.human_label, r.model_label]))).sort();
+                
+                // Build matrix
+                const matrix: Record<string, Record<string, number>> = {};
+                labels.forEach((h) => {
+                  matrix[h] = {};
+                  labels.forEach((m) => {
+                    matrix[h][m] = 0;
+                  });
+                });
+                
+                rows.forEach((r) => {
+                  matrix[r.human_label][r.model_label] = r.count;
+                });
 
-          {/* User Tagged Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-            <div className="bg-white rounded-lg shadow p-4">
-              <p className="text-sm text-gray-600">Total Tagged</p>
-              <p className="text-2xl font-bold text-indigo-600">{userTaggedStats.total}</p>
-            </div>
-            <div className="bg-white rounded-lg shadow p-4">
-              <p className="text-sm text-gray-600">With Defects</p>
-              <p className="text-2xl font-bold text-orange-600">{userTaggedStats.withDefects}</p>
-            </div>
-            <div className="bg-white rounded-lg shadow p-4">
-              <p className="text-sm text-gray-600">Houses</p>
-              <p className="text-2xl font-bold text-green-600">{userTaggedStats.houses}</p>
-            </div>
-          </div>
+                const maxCount = Math.max(...rows.map((r) => r.count));
 
-          {/* User Tagged Table */}
-          <div className="bg-white rounded-lg shadow overflow-hidden">
-            <div className="overflow-x-auto max-h-96">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50 sticky top-0">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Image</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Address</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Postcode</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Is House</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Defects</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Moondream Label</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Comment</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {userTaggedData.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
-                        No user-tagged data found
-                      </td>
-                    </tr>
-                  ) : (
-                    userTaggedData.map((item, idx) => (
-                      <tr key={idx} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 text-sm text-gray-900 truncate max-w-xs">
-                          {item.img_path?.split('/').pop() || 'N/A'}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-900">{item.address || 'N/A'}</td>
-                        <td className="px-4 py-3 text-sm text-gray-900">{item.postcode || 'N/A'}</td>
-                        <td className="px-4 py-3 text-sm">
-                          {item.is_house ? (
-                            <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
-                              Yes
-                            </span>
-                          ) : (
-                            <span className="px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-800">
-                              No
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-sm">
-                          {item.defects && item.defects.length > 0 ? (
-                            <div className="flex flex-wrap gap-1">
-                              {item.defects.map((defect: string, i: string) => (
-                                <span key={i} className="px-2 py-1 text-xs font-semibold rounded-full bg-orange-100 text-orange-800">
-                                  {defect}
-                                </span>
+                return (
+                  <div className="overflow-x-auto">
+                    <div className="inline-block min-w-full">
+                      <div className="flex">
+                        {/* Y-axis label */}
+                        <div className="flex flex-col justify-center items-center pr-4">
+                          <div className="text-xs font-semibold text-gray-700 transform -rotate-90 whitespace-nowrap">
+                            Human Label
+                          </div>
+                        </div>
+                        
+                        {/* Matrix */}
+                        <div>
+                          {/* X-axis label */}
+                          <div className="text-center mb-2">
+                            <div className="text-xs font-semibold text-gray-700">Model Prediction</div>
+                          </div>
+                          
+                          <table className="border-collapse">
+                            <thead>
+                              <tr>
+                                <th className="border border-gray-300 bg-gray-100 p-2"></th>
+                                {labels.map((label) => (
+                                  <th key={label} className="border border-gray-300 bg-gray-100 p-2 text-xs font-semibold text-gray-700 min-w-[100px]">
+                                    {label}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {labels.map((humanLabel) => (
+                                <tr key={humanLabel}>
+                                  <td className="border border-gray-300 bg-gray-100 p-2 text-xs font-semibold text-gray-700 whitespace-nowrap">
+                                    {humanLabel}
+                                  </td>
+                                  {labels.map((modelLabel) => {
+                                    const count = matrix[humanLabel][modelLabel];
+                                    const isCorrect = humanLabel === modelLabel;
+                                    const intensity = maxCount > 0 ? count / maxCount : 0;
+                                    
+                                    let bgColor = "bg-gray-50";
+                                    if (count > 0) {
+                                      if (isCorrect) {
+                                        bgColor = intensity > 0.7 ? "bg-green-200" : intensity > 0.4 ? "bg-green-100" : "bg-green-50";
+                                      } else {
+                                        bgColor = intensity > 0.7 ? "bg-red-200" : intensity > 0.4 ? "bg-red-100" : "bg-red-50";
+                                      }
+                                    }
+
+                                    return (
+                                      <td
+                                        key={modelLabel}
+                                        className={`border border-gray-300 p-3 text-center ${bgColor} transition-colors hover:ring-2 hover:ring-blue-400`}
+                                      >
+                                        <div className="text-lg font-bold text-gray-900">{count}</div>
+                                        {count > 0 && (
+                                          <div className="text-xs text-gray-600 mt-1">
+                                            {((count / data.human_validation.total) * 100).toFixed(1)}%
+                                          </div>
+                                        )}
+                                      </td>
+                                    );
+                                  })}
+                                </tr>
                               ))}
+                            </tbody>
+                          </table>
+                          
+                          {/* Legend */}
+                          <div className="flex items-center gap-6 mt-4 text-xs text-gray-600">
+                            <div className="flex items-center gap-2">
+                              <div className="w-4 h-4 bg-green-100 border border-gray-300 rounded"></div>
+                              <span>Correct predictions</span>
                             </div>
-                          ) : (
-                            <span className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
-                              No defects
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-sm">
-                          {item.moondream_label ? (
-                            <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
-                              item.moondream_label === 'ok' 
-                                ? 'bg-green-100 text-green-800'
-                                : item.moondream_label === 'needs-repaint'
-                                ? 'bg-orange-100 text-orange-800'
-                                : 'bg-red-100 text-red-800'
-                            }`}>
-                              {item.moondream_label}
-                            </span>
-                          ) : (
-                            <span className="px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-800">
-                              Not set
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-600 max-w-xs truncate">
-                          {item.comment || '-'}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        {/* ============================================================ */}
-        {/* Human vs YOLO Performance */}
-        {/* ============================================================ */}
-        {analytics.yolo_false_positive_summary?.accuracy_percent >= 0 && (
-          <div className="bg-gradient-to-r from-blue-50 to-cyan-50 rounded-lg shadow p-6 mb-8">
-            <div className="flex items-center gap-2 mb-4">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="w-6 h-6 text-blue-600"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M3 7l6 6-6 6M13 7l6 6-6 6" />
-              </svg>
-              <h2 className="text-xl font-semibold text-gray-900">
-                Human vs YOLO Performance
-              </h2>
+                            <div className="flex items-center gap-2">
+                              <div className="w-4 h-4 bg-red-100 border border-gray-300 rounded"></div>
+                              <span>Incorrect predictions</span>
+                            </div>
+                            <div className="ml-auto text-gray-500">
+                              Color intensity shows relative frequency
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-              <div className="text-center p-4 bg-green-50 rounded-lg">
-                <p className="text-sm text-gray-600">True Positives</p>
-                <p className="text-2xl font-bold text-green-600">
-                  {analytics.yolo_false_positive_summary.true_positives || 0}
-                </p>
-                <p className="text-xs text-gray-500">YOLO: Defect • Human: Defect</p>
-              </div>
+            {/* Agreement Visualization */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Agreement Pie */}
+              {(() => {
+                const rows = data.human_validation.comparisons ?? [];
+                const match = rows.filter((r) => r.agrees).reduce((s, r) => s + r.count, 0);
+                const mismatch = rows.filter((r) => !r.agrees).reduce((s, r) => s + r.count, 0);
 
-              <div className="text-center p-4 bg-blue-50 rounded-lg">
-                <p className="text-sm text-gray-600">True Negatives</p>
-                <p className="text-2xl font-bold text-blue-600">
-                  {analytics.yolo_false_positive_summary.true_negatives || 0}
-                </p>
-                <p className="text-xs text-gray-500">YOLO: OK • Human: OK</p>
-              </div>
+                const pieData = [
+                  { name: "Agreement", value: match, color: "#22c55e" },
+                  { name: "Disagreement", value: mismatch, color: "#ef4444" },
+                ];
 
-              <div className="text-center p-4 bg-orange-50 rounded-lg">
-                <p className="text-sm text-gray-600">False Positives</p>
-                <p className="text-2xl font-bold text-orange-600">
-                  {analytics.yolo_false_positive_summary.false_positives || 0}
-                </p>
-                <p className="text-xs text-gray-500">YOLO: Defect • Human: OK</p>
-              </div>
+                return (
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-700 mb-3">Agreement Distribution</h4>
+                    <ResponsiveContainer width="100%" height={250}>
+                      <PieChart>
+                        <Pie
+                          data={pieData}
+                          cx="50%"
+                          cy="50%"
+                          labelLine={false}
+                          label={({ name, value, percent }) => `${name}: ${value} (${(percent * 100).toFixed(1)}%)`}
+                          outerRadius={80}
+                          dataKey="value"
+                        >
+                          {pieData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                );
+              })()}
 
-              <div className="text-center p-4 bg-red-50 rounded-lg">
-                <p className="text-sm text-gray-600">False Negatives</p>
-                <p className="text-2xl font-bold text-red-600">
-                  {analytics.yolo_false_positive_summary.false_negatives || 0}
-                </p>
-                <p className="text-xs text-gray-500">YOLO: OK • Human: Defect</p>
-              </div>
+              {/* Error Type Breakdown */}
+              {(() => {
+                const rows = data.human_validation.comparisons ?? [];
+                const pairData = rows
+                  .filter((r) => !r.agrees)
+                  .map((r) => ({
+                    name: `${r.human_label} → ${r.model_label}`,
+                    count: r.count,
+                    fullLabel: `Human: "${r.human_label}" | Model: "${r.model_label}"`,
+                  }))
+                  .sort((a, b) => b.count - a.count);
+
+                return (
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-700 mb-3">Top Misclassifications</h4>
+                    <ResponsiveContainer width="100%" height={250}>
+                      <BarChart data={pairData} layout="vertical">
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis type="number" />
+                        <YAxis dataKey="name" type="category" width={120} tick={{ fontSize: 11 }} />
+                        <Tooltip 
+                          formatter={(value: number) => [value, "Count"]}
+                          labelFormatter={(label) => {
+                            const item = pairData.find(d => d.name === label);
+                            return item?.fullLabel || label;
+                          }}
+                        />
+                        <Bar dataKey="count" fill="#f59e0b" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                );
+              })()}
             </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-              <div className="text-center p-4 bg-indigo-50 rounded-lg">
-                <p className="text-sm text-gray-600">Accuracy</p>
-                <p className="text-3xl font-bold text-indigo-600">
-                  {analytics.yolo_false_positive_summary.accuracy_percent || 0}%
-                </p>
-              </div>
-
-              <div className="text-center p-4 bg-purple-50 rounded-lg">
-                <p className="text-sm text-gray-600">Precision</p>
-                <p className="text-3xl font-bold text-purple-600">
-                  {analytics.yolo_false_positive_summary.precision_percent || 0}%
-                </p>
-                <p className="text-xs text-gray-500">
-                  When YOLO predicts a defect, how often it's correct
-                </p>
-              </div>
-
-              <div className="text-center p-4 bg-pink-50 rounded-lg">
-                <p className="text-sm text-gray-600">Recall</p>
-                <p className="text-3xl font-bold text-pink-600">
-                  {analytics.yolo_false_positive_summary.recall_percent || 0}%
-                </p>
-                <p className="text-xs text-gray-500">
-                  How many actual defects YOLO catches
-                </p>
-              </div>
-            </div>
-
-            <div className="text-center p-4 bg-gray-50 rounded-lg">
-              <p className="text-sm text-gray-600">Total Samples Evaluated</p>
-              <p className="text-2xl font-bold text-gray-700">
-                {analytics.yolo_false_positive_summary.total_samples || 0}
-              </p>
-              <p className="text-xs text-gray-500">
-                Includes only human-tagged houses (ground truth)
-              </p>
-            </div>
-          </div>
+          </ChartCard>
         )}
 
-
-        {/* ============================================================ */}
-        {/* Human vs Moondream Performance */}
-        {/* ============================================================ */}
-        {analytics.moondream_false_positive_summary?.accuracy_percent >= 0 && (
-          <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg shadow p-6 mb-8">
-            <div className="flex items-center gap-2 mb-4">
-              <Moon className="w-6 h-6 text-purple-600" />
-              <h2 className="text-xl font-semibold text-gray-900">
-                Human vs Moondream Performance
-              </h2>
-            </div>
-            
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-              <div className="text-center p-4 bg-green-50 rounded-lg">
-                <p className="text-sm text-gray-600">True Positives</p>
-                <p className="text-2xl font-bold text-green-600">
-                  {analytics.moondream_false_positive_summary.true_positives || 0}
-                </p>
-                <p className="text-xs text-gray-500">AI: Needs Repaint, Human: Needs Repaint</p>
-              </div>
-              <div className="text-center p-4 bg-blue-50 rounded-lg">
-                <p className="text-sm text-gray-600">True Negatives</p>
-                <p className="text-2xl font-bold text-blue-600">
-                  {analytics.moondream_false_positive_summary.true_negatives || 0}
-                </p>
-                <p className="text-xs text-gray-500">AI: OK, Human: OK</p>
-              </div>
-              <div className="text-center p-4 bg-orange-50 rounded-lg">
-                <p className="text-sm text-gray-600">False Positives</p>
-                <p className="text-2xl font-bold text-orange-600">
-                  {analytics.moondream_false_positive_summary.false_positives || 0}
-                </p>
-                <p className="text-xs text-gray-500">AI: Needs Repaint, Human: OK</p>
-              </div>
-              <div className="text-center p-4 bg-red-50 rounded-lg">
-                <p className="text-sm text-gray-600">False Negatives</p>
-                <p className="text-2xl font-bold text-red-600">
-                  {analytics.moondream_false_positive_summary.false_negatives || 0}
-                </p>
-                <p className="text-xs text-gray-500">AI: OK, Human: Needs Repaint</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-              <div className="text-center p-4 bg-purple-50 rounded-lg">
-                <p className="text-sm text-gray-600">Accuracy</p>
-                <p className="text-3xl font-bold text-purple-600">
-                  {analytics.moondream_false_positive_summary.accuracy_percent || 0}%
-                </p>
-              </div>
-              <div className="text-center p-4 bg-indigo-50 rounded-lg">
-                <p className="text-sm text-gray-600">Precision</p>
-                <p className="text-3xl font-bold text-indigo-600">
-                  {analytics.moondream_false_positive_summary.precision_percent || 0}%
-                </p>
-                <p className="text-xs text-gray-500">When AI says Needs Repaint, how often it's correct</p>
-              </div>
-              <div className="text-center p-4 bg-pink-50 rounded-lg">
-                <p className="text-sm text-gray-600">Recall</p>
-                <p className="text-3xl font-bold text-pink-600">
-                  {analytics.moondream_false_positive_summary.recall_percent || 0}%
-                </p>
-                <p className="text-xs text-gray-500">How many actual defect cases AI catches</p>
-              </div>
-            </div>
-
-            <div className="text-center p-4 bg-gray-50 rounded-lg">
-              <p className="text-sm text-gray-600">Error Cases</p>
-              <p className="text-2xl font-bold text-gray-600">
-                {analytics.moondream_false_positive_summary.error_cases || 0}
-              </p>
-              <p className="text-xs text-gray-500">Images labeled as "errors" by Moondream</p>
-            </div>
-          </div>
-        )}
-
-        {/* ============================================================ */}
-        {/* Moondream vs Human Agreement */}
-        {/* ============================================================ */}
-        {analytics.moondream_human_agreement?.total_comparisons > 0 && (
-          <div className="bg-gradient-to-r from-blue-50 to-cyan-50 rounded-lg shadow p-6 mb-8">
-            <div className="flex items-center gap-2 mb-4">
-              <CheckCircle className="w-6 h-6 text-blue-600" />
-              <h2 className="text-xl font-semibold text-gray-900">
-                Moondream vs Human Label Agreement
-              </h2>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-              <div className="text-center p-4 bg-white rounded-lg shadow">
-                <p className="text-sm text-gray-600">Total Comparisons</p>
-                <p className="text-2xl font-bold text-blue-600">
-                  {analytics.moondream_human_agreement.total_comparisons}
-                </p>
-              </div>
-              <div className="text-center p-4 bg-white rounded-lg shadow">
-                <p className="text-sm text-gray-600">Matches</p>
-                <p className="text-2xl font-bold text-green-600">
-                  {analytics.moondream_human_agreement.matches}
-                </p>
-              </div>
-              <div className="text-center p-4 bg-white rounded-lg shadow">
-                <p className="text-sm text-gray-600">Agreement Rate</p>
-                <p className="text-3xl font-bold text-purple-600">
-                  {analytics.moondream_human_agreement.agreement_percent}%
-                </p>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-lg shadow overflow-hidden">
-              <h3 className="text-lg font-semibold text-gray-900 p-4 border-b">
-                Detailed Breakdown
-              </h3>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                        AI Moondream Label
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                        Human Moondream Label
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                        Count
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                        Status
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {analytics.moondream_human_agreement.breakdown?.map((item, idx) => (
-                      <tr key={idx} className={item.moondream_label === item.human_moondream_label ? "bg-green-50" : ""}>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                          {item.moondream_label}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {item.human_moondream_label}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {item.total}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          {item.moondream_label === item.human_moondream_label ? (
-                            <span className="px-2 inline-flex text-xs font-semibold rounded-full bg-green-100 text-green-800">
-                              Match
-                            </span>
-                          ) : (
-                            <span className="px-2 inline-flex text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">
-                              Mismatch
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ============================================================ */}
-        {/* Human vs Model Defect Table */}
-        {/* ============================================================ */}
-        {analytics.human_vs_model_defects?.length > 0 && (
-          <div className="bg-white rounded-lg shadow p-6 mb-8">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">
-              Human-Tagged vs YOLO-Detected Defects
-            </h2>
-
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Human Tagged
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Model Detected
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Count
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Match Status
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {analytics.human_vs_model_defects?.map((item, idx) => {
-                    return (
-                      <tr key={idx} className={item.match_status === "Match" ? "bg-green-50" : ""}>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                          {item.human_defect || "None"}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {item.model_defect || "None"}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {item.total}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          {item.match_status ==="Match" ? (
-                            <span className="px-2 inline-flex text-xs font-semibold rounded-full bg-green-100 text-green-800">
-                              Match
-                            </span>
-                          ) : (
-                            <span className="px-2 inline-flex text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">
-                              Mismatch
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* ============================================================ */}
         {/* Charts Grid */}
-        {/* ============================================================ */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-          {/* Condition Distribution */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">
-              Condition Distribution
-            </h2>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          {/* Condition Distribution Pie */}
+          <ChartCard title="Overall Condition Distribution">
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
                 <Pie
-                  data={conditionChartData}
+                  data={conditionPieData}
                   cx="50%"
                   cy="50%"
                   labelLine={false}
@@ -872,139 +471,156 @@ const AnalyticsDashboard = () => {
                   fill="#8884d8"
                   dataKey="value"
                 >
-                  {conditionChartData.map((entry, index) => (
+                  {conditionPieData.map((entry, index) => (
                     <Cell
                       key={`cell-${index}`}
-                      fill={
-                        COLORS[
-                          analytics.conditions[index]?.moondream_label || 'null'
-                        ]
-                      }
+                      fill={COLORS[entry.name] ?? COLORS.unknown}
                     />
                   ))}
                 </Pie>
                 <Tooltip />
               </PieChart>
             </ResponsiveContainer>
-          </div>
+          </ChartCard>
 
-          {/* Defect Types */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">
-              Defect Types by Occurrence
-            </h2>
+          {/* Confidence Distribution */}
+          <ChartCard title="Model Confidence Distribution">
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={defectChartData}>
+              <BarChart data={data.confidence_stats.distribution}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" angle={-15} textAnchor="end" height={80} />
+                <XAxis dataKey="bucket" angle={-15} textAnchor="end" height={80} />
                 <YAxis />
                 <Tooltip />
-                <Bar dataKey="occurrences" fill="#3b82f6" />
+                <Bar dataKey="count" fill="#3b82f6" />
               </BarChart>
             </ResponsiveContainer>
-          </div>
+          </ChartCard>
+        </div>
 
-          {/* Confidence */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">
-              Average Confidence by Defect Type
-            </h2>
+        {/* Model Comparison */}
+        {modelComparisonData.length > 0 && (
+          <ChartCard title="Model Comparison" className="mb-6">
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={defectChartData}>
+              <BarChart data={modelComparisonData}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" angle={-15} textAnchor="end" height={80} />
-                <YAxis
-                  label={{
-                    value: "Confidence %",
-                    angle: -90,
-                    position: "insideLeft",
-                  }}
-                />
-                <Tooltip />
-                <Bar dataKey="confidence" fill="#8b5cf6" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* YOLO vs Moondream */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">
-              YOLO Defects vs Moondream Labels
-            </h2>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={comparisonChartData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" angle={-15} textAnchor="end" height={80} />
+                <XAxis dataKey="model" />
                 <YAxis />
                 <Tooltip />
                 <Legend />
-                <Bar dataKey="ok" stackId="a" fill={COLORS["ok"]} name="OK" />
-                <Bar
-                  dataKey="needs-repaint"
-                  stackId="a"
-                  fill={COLORS["needs-repaint"]}
-                  name="Needs Repaint"
-                />
-                <Bar
-                  dataKey="error"
-                  stackId="a"
-                  fill={COLORS["error"]}
-                  name="Error"
-                />
+                <Bar dataKey="ok" fill={COLORS.ok} />
+                <Bar dataKey="needs-repaint" fill={COLORS["needs-repaint"]} />
+                <Bar dataKey="unknown" fill={COLORS.unknown} />
               </BarChart>
             </ResponsiveContainer>
-          </div>
-        </div>
+          </ChartCard>
+        )}
 
-        {/* ============================================================ */}
-        {/* Detailed Stats Table */}
-        {/* ============================================================ */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">
-            Detailed Defect Statistics
-          </h2>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
+        {/* Trends */}
+        {trendData.length > 0 && (
+          <ChartCard title="30-Day Trend" className="mb-6">
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={trendData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="date" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Line type="monotone" dataKey="needs-repaint" stroke={COLORS["needs-repaint"]} strokeWidth={2} />
+                <Line type="monotone" dataKey="ok" stroke={COLORS.ok} strokeWidth={2} />
+              </LineChart>
+            </ResponsiveContainer>
+          </ChartCard>
+        )}
+
+        {/* Geographic Summary Table */}
+        <ChartCard title="Geographic Breakdown" className="mb-6 text-black/60">
+          <div className="overflow-x-auto text-black/50">
+            <table className="w-full text-sm">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Defect Type
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Occurrences
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Avg Confidence
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    % of Total
-                  </th>
+                  <th className="px-4 py-2 text-left">ZIP Code</th>
+                  <th className="px-4 py-2 text-left">City</th>
+                  <th className="px-4 py-2 text-right">Total</th>
+                  <th className="px-4 py-2 text-right">Needs Work</th>
+                  <th className="px-4 py-2 text-right">% Needs Work</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {analytics.defects?.map((defect, idx) => (
-                  <tr key={idx}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {defect.defect_type}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {defect.occurrences}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {(defect.avg_confidence * 100).toFixed(1)}%
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {((defect.occurrences / totalDefects) * 100).toFixed(1)}%
+              <tbody>
+                {data.geographic_summary.map((geo, idx) => (
+                  <tr key={idx} className="border-t">
+                    <td className="px-4 py-2">{geo.postcode}</td>
+                    <td className="px-4 py-2">{geo.city || "—"}</td>
+                    <td className="px-4 py-2 text-right">{geo.total_properties}</td>
+                    <td className="px-4 py-2 text-right">{geo.needs_work}</td>
+                    <td className="px-4 py-2 text-right">
+                      <span
+                        className={`px-2 py-1 rounded ${
+                          geo.needs_work_percent > 50
+                            ? "bg-red-100 text-red-800"
+                            : geo.needs_work_percent > 25
+                            ? "bg-yellow-100 text-yellow-800"
+                            : "bg-green-100 text-green-800"
+                        }`}
+                      >
+                        {geo.needs_work_percent}%
+                      </span>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        </div>
+        </ChartCard>
       </div>
     </div>
   );
-};
+}
 
-export default AnalyticsDashboard;
+function MetricCard({
+  title,
+  value,
+  percentage,
+  subtitle,
+  color = "blue",
+}: {
+  title: string;
+  value: number | string;
+  percentage?: number;
+  subtitle?: string;
+  color?: "blue" | "red" | "green" | "purple";
+}) {
+  const colorClasses = {
+    blue: "bg-blue-50 text-blue-900 border-blue-200",
+    red: "bg-red-50 text-red-900 border-red-200",
+    green: "bg-green-50 text-green-900 border-green-200",
+    purple: "bg-purple-50 text-purple-900 border-purple-200",
+  };
+
+  return (
+    <div className={`rounded-lg border p-4 ${colorClasses[color]}`}>
+      <div className="text-sm font-medium mb-1">{title}</div>
+      <div className="text-3xl font-bold">
+        {value}
+        {percentage !== undefined && <span className="text-lg ml-2">({percentage}%)</span>}
+      </div>
+      {subtitle && <div className="text-xs mt-1 opacity-75">{subtitle}</div>}
+    </div>
+  );
+}
+
+function ChartCard({
+  title,
+  children,
+  className = "",
+}: {
+  title: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`bg-white rounded-lg shadow p-6 ${className}`}>
+      <h3 className="text-lg font-semibold mb-4">{title}</h3>
+      {children}
+    </div>
+  );
+}

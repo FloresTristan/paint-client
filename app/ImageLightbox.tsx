@@ -69,6 +69,11 @@ export default function ImageLightbox({
     console.log({lat}, {lon})
   // }, []);
 
+  const getImageSrc = (src: string) =>
+    src.startsWith("http://") || src.startsWith("https://")
+      ? src
+      : `http://localhost:8080/${src}`;
+
   return (
     <div
         className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-90"
@@ -141,7 +146,7 @@ export default function ImageLightbox({
             {/* Image */}
             {!imageError ? (
             <img
-                src={`http://localhost:8080/${currentImage.src}`}
+                src={getImageSrc(currentImage.src)}
                 alt={`${currentImage.label || `Image ${currentIndex + 1}`}`}
                 className="w-full h-full object-contain max-h-[85vh]"
                 onError={() => setImageError(true)}
