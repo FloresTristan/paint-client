@@ -229,7 +229,7 @@ export default function ZipcodeClient() {
 
       setJobStatus(status || "unknown");
 
-      if (status === "pending") {
+      if (status === "queued") {
         showSnackbar("Job queued. Waiting for processing to start...", "info");
       }
 
@@ -270,7 +270,7 @@ export default function ZipcodeClient() {
 
     source.onerror = () => {
       console.warn("SSE disconnected, browser will retry automatically");
-      showSnackbar("Stream disconnected. Retrying connection...", "error", 3000);
+      showSnackbar("Stream disconnected. Retrying connection...", "info", 3000);
     };
 
     return () => {
