@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { DefectCategory, HouseDrawerProps } from './types';
+import { DefectCategory, HouseDrawerProps } from "../../types/types";
 
 export const DEFECT_CATEGORIES: DefectCategory[] = [
   { id: 'paint-defect', label: 'Paint Defects', color: 'bg-red-100 text-red-700 border-red-300' },
@@ -33,6 +33,8 @@ export default function HouseDrawer({ isOpen, onClose, houseId, postcode, images
   const [metadataError, setMetadataError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveToast, setSaveToast] = useState<"success" | "error" | null>(null);
+  const saveToastTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE
 
@@ -48,9 +50,6 @@ export default function HouseDrawer({ isOpen, onClose, houseId, postcode, images
     console.log('Looking for angle:', angleKey, 'Found result:', result);
     return result;
   };
-
-  console.log('House data results:', houseData?.results);
-  console.log('House ID:', houseId)
 
   const currentAngleAI = getCurrentAngleAI();
 
@@ -137,11 +136,6 @@ export default function HouseDrawer({ isOpen, onClose, houseId, postcode, images
       setComment('');
     }
   }, [houseId, images.angle, aiDetectedDefects, currentAngleAI]); // Added currentAngleAI dependency
-
-  console.log("images", {images})
-  console.log("angle", images.angle)
-  console.log("houseData", {houseData})
-  console.log("AI Detected Defects:", aiDetectedDefects)
 
   // Helper function to get icons for defects
   const getDefectIcon = (defectId: string, isSelected: boolean) => {
@@ -280,17 +274,21 @@ export default function HouseDrawer({ isOpen, onClose, houseId, postcode, images
       // Save to localStorage as backup
       localStorage.setItem(`house-${houseId}-angle-${images.angle}`, JSON.stringify(data));
       setSavedData(data);
-      
-      alert('✅ Notes saved successfully!');
+
+      if (saveToastTimerRef.current) clearTimeout(saveToastTimerRef.current);
+      setSaveToast("success");
+      saveToastTimerRef.current = setTimeout(() => setSaveToast(null), 3000);
     } catch (error) {
       console.error('Error saving data:', error);
       setSaveError(error instanceof Error ? error.message : 'Failed to save data');
-      
+
       // Still save to localStorage as fallback
       localStorage.setItem(`house-${houseId}-angle-${images.angle}`, JSON.stringify(data));
       setSavedData(data);
-      
-      alert('⚠️ Saved locally but failed to sync with server. Please try again later.');
+
+      if (saveToastTimerRef.current) clearTimeout(saveToastTimerRef.current);
+      setSaveToast("error");
+      saveToastTimerRef.current = setTimeout(() => setSaveToast(null), 4000);
     } finally {
       setSaving(false);
     }
@@ -712,13 +710,23 @@ export default function HouseDrawer({ isOpen, onClose, houseId, postcode, images
             </div>
           )}
 
-          {savedData && !hasChanges() && (
+          {saveToast === "success" && (
             <div className="mt-3 p-2 bg-green-50 border border-green-200 rounded-lg">
               <p className="text-xs text-green-700 flex items-center gap-2">
                 <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                 </svg>
-                All changes saved
+                Notes saved successfully
+              </p>
+            </div>
+          )}
+          {saveToast === "error" && (
+            <div className="mt-3 p-2 bg-amber-50 border border-amber-200 rounded-lg">
+              <p className="text-xs text-amber-700 flex items-center gap-2">
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+                Saved locally — failed to sync with server
               </p>
             </div>
           )}

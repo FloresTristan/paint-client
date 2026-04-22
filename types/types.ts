@@ -93,3 +93,17 @@ export type HouseDrawerProps = {
   lon: number;
   houseData: HouseData;
 };
+
+export interface HistorySession {
+  id: number;
+  postcode: string;
+  started_at: string;
+  result_count: number;
+  current_offset: number;
+  status: string;
+}
+
+export interface HistoryResponse {
+  data: HistorySession[];
+  total?: number;
+}

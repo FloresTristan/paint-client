@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import HouseDrawer from './HouseDrawer';
-import { ImageLightboxProps } from './types';
+import { ImageLightboxProps } from "../../types/types";
 
 export default function ImageLightbox({ 
   images, 

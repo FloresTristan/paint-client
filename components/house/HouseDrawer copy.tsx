@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { DefectCategory, HouseDrawerProps } from './types';
+import { DefectCategory, HouseDrawerProps } from "../../types/types";
 
 export const DEFECT_CATEGORIES: DefectCategory[] = [
   { id: 'paint-defect', label: 'Paint Defects', color: 'bg-red-100 text-red-700 border-red-300' },
